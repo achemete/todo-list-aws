@@ -80,25 +80,24 @@ class TestApi(unittest.TestCase):
     def test_api_gettodo(self):
         print('---------------------------------------')
         print('Starting - integration test Get TODO')
-        """
-        #Add TODO
-        url = BASE_URL+"/todos"
-        data = {
-         "text": "Integration text example - GET"
-        }
-        response = requests.post(url, data=json.dumps(data))
-        json_response = response.json()
-        print('Response Add Todo: '+ str(json_response))
-        jsonbody= json.loads(json_response['body'])
-        ID_TODO = jsonbody['id']
-        print ('ID todo:'+ID_TODO)
-        self.assertEqual(
-            response.status_code, 200, "Error en la petición API a {url}"
-        )
-        self.assertEqual(
-            jsonbody['text'], "Integration text example - GET", "Error en la petición API a {url}"
-        )
-        """
+        # This should not be part of a function used to retrieve data.
+        #     #Add TODO
+        #     url = BASE_URL+"/todos"
+        #     data = {
+        #      "text": "Integration text example - GET"
+        #     }
+        #     response = requests.post(url, data=json.dumps(data))
+        #     json_response = response.json()
+        #     print('Response Add Todo: '+ str(json_response))
+        #     jsonbody= json.loads(json_response['body'])
+        #     ID_TODO = jsonbody['id']
+        #     print ('ID todo:'+ID_TODO)
+        #     self.assertEqual(
+        #         response.status_code, 200, "Error en la petición API a {url}"
+        #     )
+        #     self.assertEqual(
+        #         jsonbody['text'], "Integration text example - GET", "Error en la petición API a {url}"
+        #     )
         #Test GET TODO
         url = BASE_URL+"/todos/"+ID_TODO
         response = requests.get(url)
