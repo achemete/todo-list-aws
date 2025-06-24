@@ -13,11 +13,19 @@ pipeline {
                     echo "Hostname (agent): $(hostname)"
                     echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
                 '''
-                git branch: 'develop', 
-                url: 'https://github.com/achemete/todo-list-aws.git', 
-                credentialsId: 'PAT'
+                dir('todo-list-aws') {
+                    git branch: 'develop',
+                        url: 'https://github.com/achemete/todo-list-aws.git',
+                        credentialsId: 'PAT'
+                }
+                
+                dir('todo-list-aws-config') {
+                    git branch: 'staging',
+                        url: 'https://github.com/achemete/todo-list-aws-config.git',
+                        credentialsId: 'PAT'
+                }
+                
                 echo "${env.WORKSPACE}"
-
                 stash name: 'code', includes: '**/*,.*'
             }
         }
@@ -80,9 +88,9 @@ pipeline {
                     echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
                     '''
                     
-                sh 'sam build --parameter-overrides Stage=staging'
-                sh 'sam validate --region us-east-1'
-                sh 'sam deploy --config-env staging --no-fail-on-empty-changeset'
+                sh 'sam build -t todo-list-aws/template.yaml --parameter-overrides Stage=staging'
+                sh 'sam validate -t todo-list-aws/template.yaml --region us-east-1'
+                sh 'sam deploy --config-env staging --config-file todo-list-aws-config/samconfig.toml --no-fail-on-empty-changeset'
                 
             }
         } 
@@ -119,7 +127,7 @@ pipeline {
                         sh "pytest ${excludePyMarker} -s test/integration/todoApiTest.py --junitxml=rest-res.xml"
                         */ 
                         
-                        sh "pytest -s test/integration/todoApiTest.py --junitxml=rest-res.xml"
+                        sh "pytest -s todo-list-aws/test/integration/todoApiTest.py --junitxml=rest-res.xml"
                         
                         /*
                         withEnv(["BASE_URL=${BASE_URL}"]) {
@@ -207,7 +215,7 @@ pipeline {
         }
         success {
             echo 'Pipeline execution succeded.'
-            build job: 'CP14-Production-JF', wait: false
+            build job: 'CP14-Production-Config', wait: false
         }
     }
 }
