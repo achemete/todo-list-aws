@@ -79,15 +79,13 @@ pipeline {
                 stage('Cleanup Agent1') {
                     agent { label 'agent1' }
                     steps {
-                        echo 'lool'
-                        //cleanWs(deleteDirs: true)
+                        cleanWs(deleteDirs: true)
                     }
                 }
                 stage('Cleanup Agent2') {
                     agent { label 'agent2' }
                     steps {
-                        echo 'lol'
-                        //cleanWs(deleteDirs: true)
+                        cleanWs(deleteDirs: true)
                     }
                 }
             }
@@ -98,7 +96,7 @@ pipeline {
         always {
             echo "Pipeline execution finished."
             echo "Cleaning workspace on master."
-            //cleanWs(deleteDirs: true)
+            cleanWs(deleteDirs: true)
         }
     }
 }
