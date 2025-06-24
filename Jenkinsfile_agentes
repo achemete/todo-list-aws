@@ -207,7 +207,7 @@ pipeline {
         }
         success {
             echo 'Pipeline execution succeded.'
-            build job: 'CP14-Production', wait: false
+            build job: 'CP14-Production-JF', wait: false
         }
     }
 }
