@@ -7,14 +7,17 @@ pipeline {
             agent any
             steps {
                 echo 'Pulling the code from the repo'
-                
+                sh '''
+                    set +x
+                    echo "Username: $(whoami)"
+                    echo "Hostname (agent): $(hostname)"
+                    echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                '''
                 git branch: 'master', 
                 url: 'https://github.com/achemete/todo-list-aws.git', 
                 credentialsId: 'PAT'
-                sh 'whoami'
-                sh 'ls -la'
                 echo "${env.WORKSPACE}"
-                sh 'hostname'
+
                 stash name: 'code', includes: '**/*,.*'
             }
         }
