@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+    options { skipDefaultCheckout() }
+
+    stages {
+        stage('Get Code') {
+            agent any
+            steps {
+                echo 'Pulling the code from the repo'
+                
+                git branch: 'master', 
+                url: 'https://github.com/achemete/todo-list-aws.git', 
+                credentialsId: 'PAT'
+                sh 'whoami'
+                sh 'ls -la'
+                echo "${env.WORKSPACE}"
+                sh 'hostname'
+                stash name: 'code', includes: '**/*,.*'
+            }
+        }
+
+     stage('Deploy'){
+            agent { label 'deploy' }
+            steps {
+                unstash name: 'code'
+                sh '''
+                    set +x
+                    echo "Username: $(whoami)"
+                    echo "Hostname (agent): $(hostname)"
+                    echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                    '''
+                    
+                sh 'sam build --parameter-overrides Stage=production'
+                sh 'sam validate --region us-east-1'
+                sh 'sam deploy --config-env production --no-fail-on-empty-changeset'
+                
+            }
+        } 
+
+        stage('Rest Test'){
+            agent { label 'rest' }
+            steps {
+                unstash name: 'code'
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                        set +x
+                        echo "Username: $(whoami)"
+                        echo "Hostname (agent): $(hostname)"
+                        echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                        '''
+                    script {
+                        def BASE_URL = sh( script: "aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --region us-east-1 --output text",
+                                returnStdout: true).trim()
+                        env.BASE_URL = BASE_URL
+                        echo "BASE_URL = ${BASE_URL}"
+
+                        def excludePyMarker = (env.BRANCH_NAME == 'develop') ? '' : '-m "not notprod"'
+                        sh "pytest ${excludePyMarker} -s test/integration/todoApiTest.py --junitxml=rest-res.xml"
+                    }
+
+                }
+            }
+        }
+
+        stage('Cleanup Agents') {
+            parallel {
+                stage('Cleanup Agent1') {
+                    agent { label 'agent1' }
+                    steps {
+                        cleanWs(deleteDirs: true)
+                    }
+                }
+                stage('Cleanup Agent2') {
+                    agent { label 'agent2' }
+                    steps {
+                        cleanWs(deleteDirs: true)
+                    }
+                }
+            }
+        }
+
+    }
+    post {
+        always {
+            echo "Pipeline execution finished."
+            echo "Cleaning workspace on master."
+            cleanWs(deleteDirs: true)
+        }
+    }
+}
