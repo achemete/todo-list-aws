@@ -1,0 +1,102 @@
+pipeline {
+    agent any
+    options { skipDefaultCheckout() }
+
+    stages {
+        stage('Get Code') {
+            agent any
+            steps {
+                echo 'Pulling the code from the repo'
+                sh '''
+                    set +x
+                    echo "Username: $(whoami)"
+                    echo "Hostname (agent): $(hostname)"
+                    echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                '''
+                dir('todo-list-aws') {
+                    git branch: 'develop',
+                        url: 'https://github.com/achemete/todo-list-aws.git',
+                        credentialsId: 'PAT'
+                }
+                
+                dir('todo-list-aws-config') {
+                    git branch: 'production',
+                        url: 'https://github.com/achemete/todo-list-aws-config.git',
+                        credentialsId: 'PAT'
+                }
+                
+                echo "${env.WORKSPACE}"
+
+                stash name: 'code', includes: '**/*,.*'
+            }
+        }
+
+     stage('Deploy'){
+            agent { label 'deploy' }
+            steps {
+                unstash name: 'code'
+                sh '''
+                    set +x
+                    echo "Username: $(whoami)"
+                    echo "Hostname (agent): $(hostname)"
+                    echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                    '''
+                    
+                sh 'sam build -t todo-list-aws/template.yaml --parameter-overrides Stage=production'
+                sh 'sam validate -t todo-list-aws/template.yaml --region us-east-1'
+                sh 'sam deploy --config-env production --config-file todo-list-aws-config/samconfig.toml --no-fail-on-empty-changeset'
+                
+            }
+        } 
+
+        stage('Rest Test'){
+            agent { label 'rest' }
+            steps {
+                unstash name: 'code'
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                        set +x
+                        echo "Username: $(whoami)"
+                        echo "Hostname (agent): $(hostname)"
+                        echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
+                        '''
+                    script {
+                        def BASE_URL = sh( script: "aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --region us-east-1 --output text",
+                                returnStdout: true).trim()
+                        env.BASE_URL = BASE_URL
+                        echo "BASE_URL = ${BASE_URL}"
+
+                        def excludePyMarker = (env.BRANCH_NAME == 'develop') ? '' : '-m "not notprod"'
+                        sh "pytest ${excludePyMarker} -s todo-list-aws/test/integration/todoApiTest.py --junitxml=rest-res.xml"
+                    }
+
+                }
+            }
+        }
+
+        stage('Cleanup Agents') {
+            parallel {
+                stage('Cleanup Agent1') {
+                    agent { label 'agent1' }
+                    steps {
+                        cleanWs(deleteDirs: true)
+                    }
+                }
+                stage('Cleanup Agent2') {
+                    agent { label 'agent2' }
+                    steps {
+                        cleanWs(deleteDirs: true)
+                    }
+                }
+            }
+        }
+
+    }
+    post {
+        always {
+            echo "Pipeline execution finished."
+            echo "Cleaning workspace on master."
+            cleanWs(deleteDirs: true)
+        }
+    }
+}
