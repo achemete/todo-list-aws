@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.3] - 2025-06-29
 ### Added
-- Webhook created
+- Webhook created 
 
 ## [1.1.3] - 2025-06-24
 ### Added
