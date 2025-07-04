@@ -20,64 +20,18 @@ pipeline {
                 }
                 
                 dir('todo-list-aws-config') {
-                    git branch: 'staging',
+                    git branch: 'production',
                         url: 'https://github.com/achemete/todo-list-aws-config.git',
                         credentialsId: 'PAT'
                 }
                 
                 echo "${env.WORKSPACE}"
+
                 stash name: 'code', includes: '**/*,.*'
             }
         }
 
-        stage('Parallel Test') {
-            parallel{
-                stage('Static Test') {
-                    steps {
-                        agent { label 'static' }
-                        unstash name: 'code'
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                            sh '''
-                            set +x
-                            echo "Username: $(whoami)"
-                            echo "Hostname (agent): $(hostname)"
-                            echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
-        
-                            export PYTHONPATH=$WORKSPACE
-                            flake8 --exit-zero --format=pylint src/* >flake8.out
-                            '''
-                            recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')],
-                                qualityGates: [
-                                    [threshold: 8, type: 'TOTAL', unstable: true],
-                                    [threshold: 10, type: 'TOTAL', unstable: false]
-                                ]
-                        }
-                    }
-                }
-                stage('Security') {
-                    agent { label 'security' }
-                    steps {
-                        unstash name: 'code'
-                        catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                            sh '''
-                                set +x
-                                echo "Username: $(whoami)"
-                                echo "Hostname (agent): $(hostname)"
-                                echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
-    
-                                export PYTHONPATH=$WORKSPACE
-                                bandit --exit-zero -r . -f custom -o bandit.out --msg-template "{abspath}:{line}: {severity}: {test_id}: {msg}" 
-                                '''
-                                recordIssues tools: [pyLint(name: 'bandit', pattern: 'bandit.out')],\
-                                    qualityGates: [
-                                        [threshold: 2, type: 'TOTAL', unstable: true],
-                                        [threshold: 4, type: 'TOTAL',unstable: false]]
-                        }
-                    }
-                }
-            }
-        }
-        stage('Deploy'){
+     stage('Deploy'){
             agent { label 'deploy' }
             steps {
                 unstash name: 'code'
@@ -88,9 +42,9 @@ pipeline {
                     echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
                     '''
                     
-                sh 'sam build -t todo-list-aws/template.yaml --parameter-overrides Stage=staging'
+                sh 'sam build -t todo-list-aws/template.yaml --parameter-overrides Stage=production'
                 sh 'sam validate -t todo-list-aws/template.yaml --region us-east-1'
-                sh 'sam deploy --config-env staging --config-file todo-list-aws-config/samconfig.toml --no-fail-on-empty-changeset'
+                sh 'sam deploy --config-env production --config-file todo-list-aws-config/samconfig.toml --no-fail-on-empty-changeset'
                 
             }
         } 
@@ -106,79 +60,20 @@ pipeline {
                         echo "Hostname (agent): $(hostname)"
                         echo "Agent IP:\\n$(ip -o -4 addr show up | awk '{print \$4}' | cut -d/ -f1 | grep -v '^127\\.')"
                         '''
-                    git url: 'https://github.com/achemete/todo-list-aws.git'
-                    
                     script {
                         def BASE_URL = sh( script: "aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query 'Stacks[0].Outputs[?OutputKey==`BaseUrlApi`].OutputValue' --region us-east-1 --output text",
                                 returnStdout: true).trim()
                         env.BASE_URL = BASE_URL
                         echo "BASE_URL = ${BASE_URL}"
-                        
-                        /*
-                        git branch: 'develop',
-                            credentialsId: 'PAT',
-                            url: 'https://github.com/achemete/todo-list-aws.git'
-                            
-                        def currentBranch = sh( script: "git rev-parse --abbrev-ref HEAD",
-                            returnStdout: true).trim()
-                        echo "Current branch: ${env.BRANCH_NAME}"
-                        
+
                         def excludePyMarker = (env.BRANCH_NAME == 'develop') ? '' : '-m "not notprod"'
-                        sh "pytest ${excludePyMarker} -s test/integration/todoApiTest.py --junitxml=rest-res.xml"
-                        */ 
-                        
-                        sh "pytest -s todo-list-aws/test/integration/todoApiTest.py --junitxml=rest-res.xml"
-                        
-                        /*
-                        withEnv(["BASE_URL=${BASE_URL}"]) {
-                            sh 'pytest -s test/integration/todoApiTest.py' --junitxml=rest-res.xml
-                        }
-                        */
-                        sh "echo '${BASE_URL}' > BASE_URL.txt"
-                        stash name: 'baseurl', includes: 'BASE_URL.txt'
+                        sh "pytest ${excludePyMarker} -s todo-list-aws/test/integration/todoApiTest.py --junitxml=rest-res.xml"
                     }
-                    /*    
-                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                    }  
-                    */
+
                 }
             }
         }
-        stage('Promote'){
-            agent any
-            steps {
-                echo "Mergin code from develop to master"
-                git credentialsId: 'PAT',
-                    url: 'https://github.com/achemete/todo-list-aws.git',
-                    branch: 'develop'
-                
-                withCredentials([usernamePassword(credentialsId: 'PAT', 
-                                          usernameVariable: 'GIT_USERNAME', 
-                                          passwordVariable: 'GIT_TOKEN')]) {
-                sh '''
-                    git config user.name "achemete"
-                    git config user.email "hmartineztobar@gmail.com"
 
-                    # Configure 'ours' merge driver to preserve the files defined in gitattributes
-                    git config merge.ours.driver true
-
-                    # Using PAT...
-                    git remote set-url origin https://${GIT_USERNAME}:${GIT_TOKEN}@github.com/achemete/todo-list-aws.git
-
-                    # Confirming we're really are in develop
-                    git checkout develop
-                    git push origin develop
-
-                    # Switch to master and update local copy
-                    git checkout master
-                    git pull origin master
-          
-                    git merge develop -m "Develop validation successful, ready to promote."  
-                    git push origin master
-                    '''
-            }
-        }
-        }
         stage('Cleanup Agents') {
             parallel {
                 stage('Cleanup Agent1') {
@@ -196,26 +91,12 @@ pipeline {
             }
         }
 
- /*
-        stage('prueba') {
-            steps {
-                unstash name: 'baseurl'
-                sh 'cat BASE_URL.txt'
-                echo "BASE_URL TEST = '${BASE_URL}'"
-            }
-        }
-*/
-
     }
     post {
         always {
             echo "Pipeline execution finished."
             echo "Cleaning workspace on master."
             cleanWs(deleteDirs: true)
-        }
-        success {
-            echo 'Pipeline execution succeded.'
-            build job: 'CP14-Production-Config', wait: false
         }
     }
 }
