@@ -215,7 +215,7 @@ pipeline {
         }
         success {
             echo 'Pipeline execution succeded.'
-            build job: 'CP14-MultiBranch/master', wait: false
+            build job: 'master', wait: false
         }
     }
 }
